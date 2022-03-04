@@ -1,0 +1,41 @@
+<div class="widgetBody currentLocalTimeWidget">
+    <p>{{ 'CoreHome_WebsiteTimezone'|translate }} : {{ websiteTimeZone }}</p>
+    <div class="center"><strong data-timezone="{{ websiteTimeZone }}" id="currentLocalTime" ></strong></div>
+</div>
+<script type="text/javascript">
+    $(document).ready(function () {
+        function changeTimezone(time, timezone) {
+            let newTime = new Date(time.toLocaleString('en-US', {
+                timeZone: timezone
+            }));
+            let diff = time.getTime() - newTime.getTime(); // diff between client pc and website timezone
+            return new Date(time.getTime() - diff);
+        }
+
+        function generateDisplayTime(time){
+            let displayDate = time.getFullYear()+'-'+('0' + (time.getMonth()+1)).slice(-2)+'-'+(('0' + time.getDate()).slice(-2));
+            let displayTime = time.getHours()+':'+(('0' + time.getMinutes()).slice(-2));
+
+            return displayDate+" "+displayTime;
+        }
+
+        function refreshTime(loading = false){
+            let ele = $("#currentLocalTime"), timezone = ele.data('timezone');
+            let time = new Date();
+            let displayTime = changeTimezone(time,timezone);
+            ele.html(generateDisplayTime(displayTime));
+            if(loading){
+                let timeout = 60 - displayTime.getSeconds();
+                setTimeout(refreshTime,timeout*1000);
+            }else{ // after first run, refresh every 60s
+                setInterval(function() {
+                    time = new Date();
+                    displayTime = changeTimezone(time,timezone);
+                    ele.html(generateDisplayTime(displayTime))
+                }, 60000);
+            }
+        }
+
+        refreshTime(true);
+    });
+</script>
