@@ -72,7 +72,7 @@
     setCookieNamePrefix, setCookieDomain, setCookiePath, setSecureCookie, setVisitorIdCookie, getCookieDomain, hasCookies, setSessionCookie,
     setVisitorCookieTimeout, setSessionCookieTimeout, setReferralCookieTimeout, getCookie, getCookiePath, getSessionCookieTimeout,
     setExcludedQueryParams, setConversionAttributionFirstReferrer, tracker, request,
-    disablePerformanceTracking, maq_confirm_opted_in,
+    disablePerformanceTracking,enableLocalFileTracking, maq_confirm_opted_in,
     doNotTrack, setDoNotTrack, msDoNotTrack, getValuesFromVisitorIdCookie,
     enableCrossDomainLinking, disableCrossDomainLinking, isCrossDomainLinkingEnabled, setCrossDomainLinkingTimeout, getCrossDomainLinkingUrlParameter,
     addListener, enableLinkTracking, disableBrowserFeatureDetection, enableBrowserFeatureDetection, enableJSErrorTracking, setLinkTrackingTimer, getLinkTrackingTimer,
@@ -2391,6 +2391,9 @@ if (typeof window.Matomo !== 'object') {
                 // Guard against installing the activity tracker more than once per Tracker instance
                 heartBeatSetUp = false,
 
+                // Shall we track if the protocol is file:
+                configLocalFileTrackingEnabled = false,
+
                 // bool used to detect whether this browser window had focus at least once. So far we cannot really
                 // detect this 100% correct for an iframe so whenever Matomo is loaded inside an iframe we presume
                 // the window had focus at least once.
@@ -2990,6 +2993,10 @@ if (typeof window.Matomo !== 'object') {
              * Send request
              */
             function sendRequest(request, delay, callback) {
+                if(windowAlias.location.protocol === 'file:' && !configLocalFileTrackingEnabled){
+                  return;
+                }
+
                 refreshConsentStatus();
                 if (!configHasConsent) {
                     consentRequestsQueue.push(request);
@@ -3977,7 +3984,6 @@ if (typeof window.Matomo !== 'object') {
                 }
 
                 var request = getRequest('action_name=' + encodeWrapper(titleFixup(customTitle || configTitle)), customData, 'log');
-
                 // append already available performance metrics if they were not already tracked (or appended)
                 if (configPerformanceTrackingEnabled && !performanceTracked) {
                     request = appendAvailablePerformanceMetrics(request);
@@ -6278,6 +6284,14 @@ if (typeof window.Matomo !== 'object') {
             };
 
             /**
+             * Enable tracking when the protocal is file
+             *
+             */
+            this.enableLocalFileTracking = function () {
+                configLocalFileTrackingEnabled = true;
+            };
+
+            /**
              * Set heartbeat (in seconds)
              *
              * @param int heartBeatDelayInSeconds Defaults to 15s. Cannot be lower than 5.
@@ -7123,7 +7137,7 @@ if (typeof window.Matomo !== 'object') {
          * Constructor
          ************************************************************/
 
-        var applyFirst = ['addTracker', 'forgetCookieConsentGiven', 'requireCookieConsent','disableBrowserFeatureDetection', 'disableCookies', 'setTrackerUrl', 'setAPIUrl', 'enableCrossDomainLinking', 'setCrossDomainLinkingTimeout', 'setSessionCookieTimeout', 'setVisitorCookieTimeout', 'setCookieNamePrefix', 'setCookieSameSite', 'setSecureCookie', 'setCookiePath', 'setCookieDomain', 'setDomains', 'setUserId', 'setVisitorId', 'setSiteId', 'alwaysUseSendBeacon', 'disableAlwaysUseSendBeacon', 'enableLinkTracking', 'setCookieConsentGiven', 'requireConsent', 'setConsentGiven', 'disablePerformanceTracking', 'setPagePerformanceTiming', 'setExcludedQueryParams'];
+        var applyFirst = ['addTracker', 'forgetCookieConsentGiven', 'requireCookieConsent','disableBrowserFeatureDetection', 'disableCookies', 'setTrackerUrl', 'setAPIUrl', 'enableCrossDomainLinking', 'setCrossDomainLinkingTimeout', 'setSessionCookieTimeout', 'setVisitorCookieTimeout', 'setCookieNamePrefix', 'setCookieSameSite', 'setSecureCookie', 'setCookiePath', 'setCookieDomain', 'setDomains', 'setUserId', 'setVisitorId', 'setSiteId', 'alwaysUseSendBeacon', 'disableAlwaysUseSendBeacon', 'enableLinkTracking', 'setCookieConsentGiven', 'requireConsent', 'setConsentGiven', 'disablePerformanceTracking', 'enableLocalFileTracking', 'setPagePerformanceTiming', 'setExcludedQueryParams'];
 
         function createFirstTracker(matomoUrl, siteId)
         {
