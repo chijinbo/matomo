@@ -170,11 +170,12 @@ class PasswordResetter
         $login = $user['login'];
 
         $keySuffix = time() . Common::getRandomString($length = 32);
-        $this->savePasswordResetInfo($login, $newPassword, $keySuffix);
+        $resetToken = $this->generatePasswordResetToken($user,$keySuffix);
+        $this->savePasswordResetInfo($user, $newPassword, $resetToken);
 
         // ... send email with confirmation link
         try {
-            $this->sendEmailConfirmationLink($user, $keySuffix);
+            $this->sendEmailConfirmationLink($user, $resetToken);
         } catch (Exception $ex) {
             // remove password reset info
             $this->removePasswordResetInfo($login);
@@ -195,8 +196,9 @@ class PasswordResetter
         $resetInfo = $this->getPasswordToResetTo($login);
         if ($resetInfo === false
             || empty($resetInfo['hash'])
-            || empty($resetInfo['keySuffix'])
-            || !$this->isTokenValid($resetToken, $user, $resetInfo['keySuffix'])
+            || empty($resetInfo['resetToken'])
+            || empty($resetInfo['oldData'])
+            || !$this->isTokenValid($resetToken, $user, $resetInfo['resetToken'], $resetInfo['oldData'])
         ) {
             throw new Exception(Piwik::translate('Login_InvalidOrExpiredToken'));
         }
@@ -241,18 +243,20 @@ class PasswordResetter
      *
      * @param string $token The reset token to check.
      * @param array $user The user information returned by the UsersManager API.
-     * @param string $keySuffix The suffix used in generating a token.
+     * @param string $resetToken The hashed reset token in db
+     * @param string $oldData The hash old data
      * @return bool true if valid, false otherwise.
      */
-    public function isTokenValid($token, $user, $keySuffix)
+    public function isTokenValid($token, $user, $resetToken,$oldData)
     {
         $now = time();
 
-        // token valid for 24 hrs (give or take, due to the coarse granularity in our strftime format string)
-        for ($i = 0; $i <= 24; $i++) {
-            $generatedToken = $this->generatePasswordResetToken($user, $keySuffix, $now + $i * 60 * 60);
-            if ($generatedToken === $token) {
-                return true;
+        if($this->passwordHelper->verify($token,$resetToken)){
+            // token valid for 24 hrs (give or take, due to the coarse granularity in our strftime format string)
+            for ($i = 0; $i <= 24; $i++) {
+                if ($this->passwordHelper->verify($this->getExpiryTimeString($now + $i * 60 * 60) . $user['login'] . $user['email'] . $user['ts_password_modified'] . $user['password'],$oldData)) {
+                    return true;
+                }
             }
         }
 
@@ -281,9 +285,8 @@ class PasswordResetter
             $expiryTimestamp = $this->getDefaultExpiryTime();
         }
 
-        $expiry = strftime('%Y%m%d%H', $expiryTimestamp);
         $token = $this->generateSecureHash(
-            $expiry . $user['login'] . $user['email'] . $user['ts_password_modified'] . $keySuffix,
+            $this->getExpiryTimeString($expiryTimestamp) . $user['login'] . $user['email'] . $user['ts_password_modified'] . $keySuffix,
             $user['password']
         );
         return $token;
@@ -364,6 +367,17 @@ class PasswordResetter
     }
 
     /**
+     * Returns an formated time string for the given timestamp
+     *
+     *
+     * @return string
+     */
+    protected function getExpiryTimeString($expiryTimestamp)
+    {
+        return strftime('%Y%m%d%H', $expiryTimestamp);
+    }
+
+    /**
      * Checks the reset password's complexity. Will use UsersManager's requirements for user passwords.
      *
      * Derived classes can override this method to provide fewer or additional checks.
@@ -420,15 +434,12 @@ class PasswordResetter
      * Sends email confirmation link for a password reset request.
      *
      * @param array $user User info for the requested password reset.
-     * @param string $keySuffix The suffix used in generating a token.
+     * @param string $resetToken The token suffix
      */
-    private function sendEmailConfirmationLink($user, $keySuffix)
+    private function sendEmailConfirmationLink($user, $resetToken)
     {
         $login = $user['login'];
         $email = $user['email'];
-
-        // construct a password reset token from user information
-        $resetToken = $this->generatePasswordResetToken($user, $keySuffix);
 
         $confirmPasswordModule = $this->confirmPasswordModule;
         $confirmPasswordAction = $this->confirmPasswordAction;
@@ -454,15 +465,15 @@ class PasswordResetter
     /**
      * Stores password reset info for a specific login.
      *
-     * @param string $login The user login for whom a password change was requested.
+     * @param array $user User info for the requested password reset.
      * @param string $newPassword The new password to set.
-     * @param string $keySuffix The suffix used in generating a token.
+     * @param string $resetToken The hashed token used in the url
      *
      * @throws Exception if a password reset was already requested within one hour
      */
-    private function savePasswordResetInfo($login, $newPassword, $keySuffix)
+    private function savePasswordResetInfo($user, $newPassword, $resetToken)
     {
-        $optionName = self::getPasswordResetInfoOptionName($login);
+        $optionName = self::getPasswordResetInfoOptionName($user['login']);
 
         $existingResetInfo = Option::get($optionName);
 
@@ -485,8 +496,9 @@ class PasswordResetter
 
         $optionData = [
             'hash' => $this->passwordHelper->hash(UsersManager::getPasswordHash($newPassword)),
-            'keySuffix' => $keySuffix,
+            'resetToken' => $this->passwordHelper->hash($resetToken),
             'timestamp' => $time,
+            'oldData' => $this->passwordHelper->hash($this->getExpiryTimeString($this->getDefaultExpiryTime()). $user['login'] . $user['email'] . $user['ts_password_modified'] . $user['password']),
             'requests' => $count+1
         ];
         $optionData = json_encode($optionData);
